@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HUB Monitor</title>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#1e293b; --card:#ffffff; --accent:#1e3a8a;
+    --blue:#3b82f6; --orange:#f97316; --red:#ef4444; --yellow:#facc15; --green:#10b981;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;font-family:sans-serif;background:var(--bg);color:#fff;display:flex}
+  .col{flex:1;padding:15px;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+  .left{background:#cbd5e1;color:#0f172a}
+  .right{background:var(--bg)}
+  .left-scroll{flex:1;overflow-y:auto;padding-right:4px}
+  .header{background:var(--accent);color:white;padding:15px;border-radius:12px;margin-bottom:15px;flex-shrink:0}
+  .header .top{display:flex;justify-content:space-between;align-items:center}
+  .header .title{font-size:20px;font-weight:bold}
+  .header .meta{font-size:11px;opacity:.75;margin-top:4px}
+  .stat-row{display:flex;gap:15px;font-size:13px;flex-wrap:wrap;margin-top:8px}
+  .stat-row div b{margin-left:4px}
+  #grid{display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:12px}
+  .card{background:white;padding:12px 16px;border-radius:15px;border-left:8px solid var(--accent);box-shadow:0 4px 6px rgba(0,0,0,.1)}
+  .hub-title{font-size:19px;display:block;margin-bottom:6px}
+  table{width:100%;font-size:13px;border-collapse:collapse}
+  .badge{color:white;padding:5px;border-radius:6px;text-align:center;font-weight:bold;margin-bottom:5px;font-size:12px}
+  .sub{flex:1;background:#f8fafc;padding:8px;border-radius:8px}
+  .late-card{border-left-color:#f43f5e}
+  .late-card table th{background:#f1f5f9;font-size:11px}
+  .late-card td{border-bottom:1px solid #eee}
+
+  .count{text-align:center;color:#38bdf8;font-size:16px;font-weight:bold;margin-bottom:10px;letter-spacing:1px;flex-shrink:0}
+  .err{color:#f87171;font-size:12px;margin-top:6px;flex-shrink:0}
+
+  /* --- зоны склада: заполняют весь оставшийся экран, форма — декоративный SVG-контур позади --- */
+  .yard-wrap{flex:1;display:grid;grid-template-columns:1fr 2fr;gap:12px;min-height:0}
+  .zone{background:#1e293b;border:2px solid #334155;border-radius:16px;padding:10px;display:flex;flex-direction:column;min-height:0}
+  .zone h3{margin:0 0 8px;font-size:13px;letter-spacing:.5px;opacity:.8;flex-shrink:0;text-align:center}
+  .zone .plates{flex:1;overflow:hidden;display:flex;flex-wrap:wrap;align-content:flex-start;gap:6px}
+  .zone-parking{grid-row:1/3}
+  .zone-right-grid{display:grid;grid-template-rows:1fr 1fr;gap:12px;min-height:0}
+  .zone-right-sub{display:grid;grid-template-columns:1fr 1fr;gap:12px;min-height:0}
+  .plate{padding:4px 9px;border-radius:5px;font-weight:800;font-size:11px;border:1px solid #0f172a;color:#fff;height:fit-content;white-space:nowrap}
+  .plate.blue{background:var(--blue)} .plate.orange{background:var(--orange)}
+  .plate.red{background:var(--red)} .plate.late{background:var(--yellow);color:#1e293b}
+  .plate.more{background:#475569;font-weight:700}
+  .empty{opacity:.5;font-size:12px}
+
+  /* --- заглушка "нет сигнала", если реле не получает новых данных долгое время --- */
+  .no-signal{position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:9999;display:none;align-items:center;justify-content:center}
+  .no-signal.show{display:flex}
+  .no-signal-box{border:6px solid #ef4444;border-radius:20px;padding:50px 70px;text-align:center;animation:ns-blink 1.5s infinite}
+  .no-signal-box h1{font-size:56px;margin:0 0 20px;color:#ef4444;letter-spacing:4px}
+  .no-signal-box p{font-size:24px;margin:0;color:#fff}
+  .no-signal-box .sub{font-size:16px;opacity:.6;margin-top:16px;color:#fff}
+  @keyframes ns-blink{0%,100%{opacity:1}50%{opacity:.55}}
+</style>
+</head>
+<body>
+
+<div class="no-signal" id="no-signal">
+  <div class="no-signal-box">
+    <h1>⚠ НЕТ СИГНАЛА</h1>
+    <p>Перезапусти скрипт hub.zammler</p>
+    <div class="sub" id="no-signal-detail"></div>
+  </div>
+</div>
+
+<div class="col left">
+  <div class="header">
+    <div class="top">
+      <span class="title">LIVE MONITOR</span>
+      <span class="meta" id="time">—</span>
+    </div>
+    <div class="meta" id="count">Загрузка...</div>
+    <div class="stat-row" id="stats"></div>
+  </div>
+  <div class="left-scroll">
+    <div id="grid"></div>
+    <div id="late"></div>
+  </div>
+</div>
+
+<div class="col right">
+  <div class="header">
+    <div class="top">
+      <span class="title">HUB PARKING MONITOR</span>
+      <span class="meta" id="yard-time">—</span>
+    </div>
+  </div>
+  <div class="count" id="yard-count"></div>
+  <div class="yard-wrap">
+    <div class="zone zone-parking">
+      <h3>ПАРКОВКА</h3>
+      <div class="plates" id="z-parking"></div>
+    </div>
+    <div class="zone-right-grid">
+      <div class="zone-right-sub">
+        <div class="zone"><h3>ПОГРУЗКА · CARGO</h3><div class="plates" id="z-load_cargo"></div></div>
+        <div class="zone"><h3>ПОГРУЗКА · PARCEL</h3><div class="plates" id="z-load_parcel"></div></div>
+      </div>
+      <div class="zone-right-sub">
+        <div class="zone"><h3>ВЫГРУЗКА · CARGO</h3><div class="plates" id="z-unload_cargo"></div></div>
+        <div class="zone"><h3>ВЫГРУЗКА · PARCEL</h3><div class="plates" id="z-unload_parcel"></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="err" id="err"></div>
+</div>
+
+<script>
+// ====== НАСТРОЙ ПОД СЕБЯ ======
+const DATA_URL = 'https://script.google.com/macros/s/AKfycbw7NRmhoWNudec94NpPhe1jCHgoUhBAwbN-X7N63Qm2CZQHF1J_dlrbyDZh-BmohK3b0w/exec';
+const TOKEN = 'aV4$rUd8'; // тот же, что в Code.gs и в collector.js
+const POLL_MS = 15000;
+// ================================
+
+const ZONE_IDS = ['parking', 'load_cargo', 'load_parcel', 'unload_cargo', 'unload_parcel'];
+const CL_CLASS = { blue: 'blue', orange: 'orange', red: 'red', late: 'late' };
+const HUBS_PER_PAGE = 3;
+
+// ---- ротация хабов на левой панели (по 4 за раз, каждые 8с) ----
+let hubsCache = [], curH = 0;
+let rotator = null;
+function renderHubGrid() {
+  const gridEl = document.getElementById('grid');
+  if (!hubsCache.length) { gridEl.innerHTML = '<div class="empty">Нет активных хабов</div>'; return; }
+  const page = hubsCache.slice(curH, curH + HUBS_PER_PAGE);
+  gridEl.innerHTML = page.map(h => `<div class="card"><b class="hub-title">${h.n}</b>
+      <div style="display:flex;gap:10px">
+        ${renderHubTable(h.out || {}, 'ОТПРАВКА ⬇', '#2563eb')}
+        ${renderHubTable(h.in || {}, 'ПРИБЫТИЕ ⬆', '#10b981')}
+      </div></div>`).join('');
+}
+function startRotator() {
+  if (rotator) return;
+  rotator = setInterval(() => {
+    if (!hubsCache.length) return;
+    curH += HUBS_PER_PAGE;
+    if (curH >= hubsCache.length) curH = 0;
+    renderHubGrid();
+  }, 8000);
+}
+
+function renderHubTable(d, label, color) {
+  let rows = '', v = 0, orders = 0;
+  Object.keys(d).forEach(s => {
+    rows += `<tr><td>${s}</td><td align="right"><b>${d[s].v}</b></td><td align="right" style="opacity:.7">${d[s].orders || 0}</td></tr>`;
+    v += d[s].v;
+    orders += d[s].orders || 0;
+  });
+  return `<div class="sub"><div class="badge" style="background:${color}">${label}</div>
+    <table><tr style="font-size:11px;opacity:.6"><td></td><td align="right">рейсы</td><td align="right">заказы</td></tr>
+    ${rows}<tr style="border-top:2px solid #cbd5e1;font-weight:bold"><td>Итого</td><td align="right">${v}</td><td align="right">${orders}</td></tr></table></div>`;
+}
+
+// раскладывает номера в зону без скролла: если не влезают — обрезает и показывает "+N"
+function fillZoneNoScroll(el, items) {
+  if (!items.length) { el.innerHTML = '<div class="empty">—</div>'; return; }
+  el.innerHTML = items.map(p => `<div class="plate ${CL_CLASS[p.cl] || ''}">${p.n}</div>`).join('');
+  if (el.scrollHeight <= el.clientHeight + 1) return;
+  // не влезло — убираем с конца, пока не влезет + бейдж "+N ещё"
+  let shown = items.length;
+  while (shown > 0 && el.scrollHeight > el.clientHeight + 1) {
+    shown--;
+    const hidden = items.length - shown;
+    el.innerHTML = items.slice(0, shown).map(p => `<div class="plate ${CL_CLASS[p.cl] || ''}">${p.n}</div>`).join('')
+      + `<div class="plate more">+${hidden}</div>`;
+  }
+}
+
+function render(data) {
+  document.getElementById('err').textContent = '';
+  document.getElementById('time').textContent = 'ОБНОВЛЕНО: ' + new Date(data.updatedAt).toLocaleTimeString();
+  document.getElementById('yard-time').textContent = 'ОБНОВЛЕНО: ' + new Date(data.updatedAt).toLocaleTimeString();
+  document.getElementById('count').textContent = 'ЗАГРУЖЕНО: ' + data.total;
+
+  document.getElementById('stats').innerHTML =
+    Object.keys(data.stats || {}).map(s => `<div>${s}:<b>${data.stats[s]}</b></div>`).join('') || 'Нет данных';
+
+  hubsCache = data.hubs || [];
+  if (curH >= hubsCache.length) curH = 0;
+  renderHubGrid();
+  startRotator();
+
+  const lates = data.lates || [];
+  document.getElementById('late').innerHTML = lates.length
+    ? `<div class="card late-card">
+        <b class="hub-title" style="color:#f43f5e;font-size:17px">⚠️ КОНТРОЛЬ ПРИБЫТИЯ (2 ЧАСА)</b>
+        <table><tr><th>КУДА</th><th>МАШИНА</th><th>ВОДИТЕЛЬ</th><th align="center">ПЛАН</th><th align="right">ЗАКАЗЫ</th><th align="right">ОСТ.</th></tr>
+          ${lates.slice(0, 8).map(l => `<tr><td><b>${l.to}</b></td><td>${l.car}</td><td>${l.drv}</td>
+            <td align="center">${l.plan}</td><td align="right">${l.orders || 0}</td><td align="right"><b style="color:#ef4444">${l.m} мин</b></td></tr>`).join('')}
+        </table></div>`
+    : '';
+
+  const yard = data.yard || [];
+  document.getElementById('yard-count').textContent =
+    `Парковка: ${yard.filter(p => p.zone === 'parking').length} | ` +
+    `Погрузка: ${yard.filter(p => p.zone.startsWith('load')).length} | ` +
+    `Выгрузка: ${yard.filter(p => p.zone.startsWith('unload')).length}`;
+
+  ZONE_IDS.forEach(z => {
+    const el = document.getElementById('z-' + z);
+    fillZoneNoScroll(el, yard.filter(p => p.zone === z));
+  });
+}
+
+async function poll() {
+  try {
+    const res = await fetch(`${DATA_URL}?token=${encodeURIComponent(TOKEN)}`);
+    const data = await res.json();
+    if (data.ok === false) { document.getElementById('err').textContent = 'Ошибка: ' + data.error; return; }
+    if (data.empty) { document.getElementById('err').textContent = 'Ждём первый снепшот от коллектора...'; return; }
+    render(data);
+    checkStale(data);
+  } catch (e) {
+    document.getElementById('err').textContent = 'Не удалось загрузить данные: ' + e;
+  } finally {
+    updateNoSignalUI();
+    setTimeout(poll, POLL_MS);
+  }
+}
+
+// --- страховка "нет сигнала": если содержимое по хабам не меняется 3 часа подряд ---
+const STALE_MS = 3 * 60 * 60 * 1000;
+let lastContentSig = null;
+let lastChangeAt = Date.now();
+
+function checkStale(data) {
+  const sig = JSON.stringify({ stats: data.stats, hubs: data.hubs });
+  if (sig !== lastContentSig) {
+    lastContentSig = sig;
+    lastChangeAt = Date.now();
+  }
+}
+
+function updateNoSignalUI() {
+  const staleFor = Date.now() - lastChangeAt;
+  const stale = staleFor > STALE_MS;
+  document.getElementById('no-signal').classList.toggle('show', stale);
+  if (stale) {
+    const hrs = (staleFor / 3600000).toFixed(1);
+    document.getElementById('no-signal-detail').textContent = `Данные по хабам не менялись ${hrs} ч.`;
+  }
+}
+
+poll();
+</script>
+</body>
+</html>
