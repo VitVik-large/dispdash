@@ -225,22 +225,21 @@ async function poll() {
   }
 }
 
-// --- страховка №1 (быстрая): коллектор шлёт снепшот раз в ~3 мин, метка updatedAt должна
-// двигаться. Если не двигается дольше HEARTBEAT_MS — коллектор реально не работает
-// (закрыли вкладку, сайт перестал отвечать и т.п.), а не просто "на складе тихо".
+// --- страховка №1 (быстрая): сравниваем реальное время самого снепшота (updatedAt,
+// его ставит коллектор при каждой отправке) с текущим временем — НЕ то, "менялась ли
+// строка с момента открытия вкладки". Это принципиально: если страницу перезагрузили
+// и с реле сразу пришёл уже старый снепшот, отсчёт не должен обнуляться.
 const HEARTBEAT_MS = 12 * 60 * 1000; // 12 минут = ~4 пропущенных цикла отправки, запас на сетевые заминки
 let lastUpdatedAt = null;
-let lastHeartbeatAt = Date.now();
 
 function checkHeartbeat(data) {
-  if (data.updatedAt !== lastUpdatedAt) {
-    lastUpdatedAt = data.updatedAt;
-    lastHeartbeatAt = Date.now();
-  }
+  lastUpdatedAt = data.updatedAt;
 }
 
 // --- страховка №2 (медленная, 3 часа): цифры по хабам не меняются, хотя коллектор мог
-// быть технически жив — оставлена как ты просил, просто с более честной подписью.
+// быть технически жив. У этой проверки остаётся ограничение: отсчёт живёт только пока
+// открыта вкладка дашборда (при перезагрузке страницы стартует заново) — это нормально,
+// быстрая проверка №1 всё равно поймает "коллектор реально не отвечает" за 12 минут.
 const CONTENT_STALE_MS = 3 * 60 * 60 * 1000;
 let lastContentSig = null;
 let lastContentChangeAt = Date.now();
@@ -254,16 +253,16 @@ function checkContentStale(data) {
 }
 
 function updateNoSignalUI() {
-  const heartbeatGap = Date.now() - lastHeartbeatAt;
+  const heartbeatGap = lastUpdatedAt ? Date.now() - new Date(lastUpdatedAt).getTime() : 0;
   const contentGap = Date.now() - lastContentChangeAt;
-  const heartbeatDead = heartbeatGap > HEARTBEAT_MS;
+  const heartbeatDead = lastUpdatedAt !== null && heartbeatGap > HEARTBEAT_MS;
   const contentDead = contentGap > CONTENT_STALE_MS;
   const stale = heartbeatDead || contentDead;
   document.getElementById('no-signal').classList.toggle('show', stale);
   const detailEl = document.getElementById('no-signal-detail');
   if (heartbeatDead) {
     const mins = Math.round(heartbeatGap / 60000);
-    detailEl.textContent = `Коллектор не присылал данные ${mins} мин — скорее всего скрипт остановлен`;
+    detailEl.textContent = `Последний снепшот пришёл ${mins} мин назад — скорее всего скрипт остановлен`;
   } else if (contentDead) {
     const hrs = (contentGap / 3600000).toFixed(1);
     detailEl.textContent = `Коллектор жив, но цифры по хабам не менялись ${hrs} ч — проверь актуальность источника`;
