@@ -215,7 +215,8 @@ async function poll() {
     if (data.ok === false) { document.getElementById('err').textContent = 'Ошибка: ' + data.error; return; }
     if (data.empty) { document.getElementById('err').textContent = 'Ждём первый снепшот от коллектора...'; return; }
     render(data);
-    checkStale(data);
+    checkHeartbeat(data);
+    checkContentStale(data);
   } catch (e) {
     document.getElementById('err').textContent = 'Не удалось загрузить данные: ' + e;
   } finally {
@@ -224,26 +225,48 @@ async function poll() {
   }
 }
 
-// --- страховка "нет сигнала": если содержимое по хабам не меняется 3 часа подряд ---
-const STALE_MS = 3 * 60 * 60 * 1000;
-let lastContentSig = null;
-let lastChangeAt = Date.now();
+// --- страховка №1 (быстрая): коллектор шлёт снепшот раз в ~3 мин, метка updatedAt должна
+// двигаться. Если не двигается дольше HEARTBEAT_MS — коллектор реально не работает
+// (закрыли вкладку, сайт перестал отвечать и т.п.), а не просто "на складе тихо".
+const HEARTBEAT_MS = 12 * 60 * 1000; // 12 минут = ~4 пропущенных цикла отправки, запас на сетевые заминки
+let lastUpdatedAt = null;
+let lastHeartbeatAt = Date.now();
 
-function checkStale(data) {
+function checkHeartbeat(data) {
+  if (data.updatedAt !== lastUpdatedAt) {
+    lastUpdatedAt = data.updatedAt;
+    lastHeartbeatAt = Date.now();
+  }
+}
+
+// --- страховка №2 (медленная, 3 часа): цифры по хабам не меняются, хотя коллектор мог
+// быть технически жив — оставлена как ты просил, просто с более честной подписью.
+const CONTENT_STALE_MS = 3 * 60 * 60 * 1000;
+let lastContentSig = null;
+let lastContentChangeAt = Date.now();
+
+function checkContentStale(data) {
   const sig = JSON.stringify({ stats: data.stats, hubs: data.hubs });
   if (sig !== lastContentSig) {
     lastContentSig = sig;
-    lastChangeAt = Date.now();
+    lastContentChangeAt = Date.now();
   }
 }
 
 function updateNoSignalUI() {
-  const staleFor = Date.now() - lastChangeAt;
-  const stale = staleFor > STALE_MS;
+  const heartbeatGap = Date.now() - lastHeartbeatAt;
+  const contentGap = Date.now() - lastContentChangeAt;
+  const heartbeatDead = heartbeatGap > HEARTBEAT_MS;
+  const contentDead = contentGap > CONTENT_STALE_MS;
+  const stale = heartbeatDead || contentDead;
   document.getElementById('no-signal').classList.toggle('show', stale);
-  if (stale) {
-    const hrs = (staleFor / 3600000).toFixed(1);
-    document.getElementById('no-signal-detail').textContent = `Данные по хабам не менялись ${hrs} ч.`;
+  const detailEl = document.getElementById('no-signal-detail');
+  if (heartbeatDead) {
+    const mins = Math.round(heartbeatGap / 60000);
+    detailEl.textContent = `Коллектор не присылал данные ${mins} мин — скорее всего скрипт остановлен`;
+  } else if (contentDead) {
+    const hrs = (contentGap / 3600000).toFixed(1);
+    detailEl.textContent = `Коллектор жив, но цифры по хабам не менялись ${hrs} ч — проверь актуальность источника`;
   }
 }
 
