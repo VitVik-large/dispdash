@@ -27,9 +27,9 @@
   .alerts{flex:1;min-height:0;background:#fff;border-radius:12px;border-left:8px solid #f43f5e;padding:8px 14px;display:flex;flex-direction:column;overflow:hidden}
   .alerts h2{margin:0 0 6px;font-size:17px;color:#f43f5e;flex-shrink:0}
   .alerts .body{flex:1;min-height:0;overflow:hidden}
-  .alerts table{width:100%;border-collapse:collapse;font-size:14px}
-  .alerts th{background:#f1f5f9;font-size:11px;text-align:left;padding:3px 4px}
-  .alerts td{border-bottom:1px solid #eee;padding:3px 4px;white-space:nowrap}
+  .alerts table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:clamp(11px,.85vw,14px)}
+  .alerts th{background:#f1f5f9;font-size:11px;text-align:left;padding:3px 4px;white-space:nowrap;overflow:hidden}
+  .alerts td{border-bottom:1px solid #eee;padding:3px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .alerts tr.soon td.m{animation:blink 1.2s infinite}
   .m{text-align:right;font-weight:bold}.m.over{color:#dc2626}.m.ok{color:#d97706}
   .more{font-size:13px;opacity:.7;padding-top:3px}
@@ -87,7 +87,7 @@
 const DATA_URL = 'https://script.google.com/macros/s/AKfycbwQ5L-KaRgs4NGxzjuUKydye-n4PdzJcunz_yFl5l7Nvta5LIA6GHTxZcA_8IbKTEqWTg/exec';
 const TOKEN = 'aV4$rUd8';
 const POLL_MS = 15000;
-const ALERT_MIN = 15, OVERDUE_MIN = 60;
+const ALERT_MIN = 15, OVERDUE_MIN = 30;
 const CITIES_PER_PAGE = 4, ROTATE_MS = 8000;
 // ================================
 
@@ -121,8 +121,8 @@ function renderAlerts() {
   if (!rows.length) { el.innerHTML = '<div class="empty">Нет прибытий в ближайшие 15 минут</div>'; return; }
   const tr = (l) => `<tr class="${l.m >= 0 && l.m <= 5 ? 'soon' : ''}"><td><b>${esc(l.to)}</b></td><td>${esc(l.city)}</td><td>${esc(l.car)}</td>
     <td>${esc(l.drv)}</td><td>${esc(l.plan)}</td><td align="right">${l.orders || 0}</td>
-    <td class="m ${l.m < 0 ? 'over' : 'ok'}">${l.m < 0 ? 'опоздание ' + (-l.m) : 'через ' + l.m} мин</td></tr>`;
-  const head = '<tr><th>ТОЧКА</th><th>ГОРОД</th><th>МАШИНА</th><th>ВОДИТЕЛЬ</th><th>ПЛАН</th><th style="text-align:right">ЗАКАЗЫ</th><th style="text-align:right">ОСТАЛОСЬ</th></tr>';
+    <td class="m ${l.m < 0 ? 'over' : 'ok'}">${l.m < 0 ? '−' + (-l.m) : 'через ' + l.m} мин</td></tr>`;
+  const head = '<colgroup><col style="width:15%"><col style="width:11%"><col style="width:14%"><col style="width:27%"><col style="width:8%"><col style="width:10%"><col style="width:15%"></colgroup><tr><th>ТОЧКА</th><th>ГОРОД</th><th>МАШИНА</th><th>ВОДИТЕЛЬ</th><th>ПЛАН</th><th style="text-align:right">ЗАКАЗЫ</th><th style="text-align:right">ОСТ.</th></tr>';
   const draw = (n) => {
     el.innerHTML = `<table>${head}${rows.slice(0, n).map(tr).join('')}</table>` +
       (n < rows.length ? `<div class="more">+ ещё ${rows.length - n}</div>` : '');
